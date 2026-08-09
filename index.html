@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="theme-color" content="#1a1714">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -14,14 +14,14 @@
     --brass:#c8a24a; --brass-dim:#8a7132;
     --ink:#e8dcc0; --dim:#9a8d74; --bad:#a8442e;
   }
-  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
-  html,body{height:100%}
+  /* touch-action не наследуется — гасим двойной тап на КАЖДОМ элементе */
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent; touch-action:manipulation}
+  html,body{height:100%; overscroll-behavior:none; -webkit-text-size-adjust:100%; text-size-adjust:100%}
   body{
     margin:0; overflow:hidden;
     background:var(--bg); color:var(--ink);
     font-family:"Courier New",Courier,monospace;
     -webkit-user-select:none; user-select:none;
-    touch-action:manipulation;
   }
   #app{
     height:100vh; height:100dvh;
@@ -68,6 +68,11 @@
   .chg.live .n{color:var(--ink)}
   .chg.live .e{color:var(--brass-dim)}
   .chg.dead{opacity:.3}
+  .chg.bump{animation:bump .45s ease-out}
+  @keyframes bump{
+    0%{box-shadow:0 0 0 0 rgba(200,162,74,.9); transform:scale(1.1)}
+    100%{box-shadow:0 0 0 14px rgba(200,162,74,0); transform:scale(1)}
+  }
 
   /* ---------- клавиатура ---------- */
   .pad{
@@ -137,6 +142,19 @@
 <script>
 (function(){
   var MAX_ELEV = 60, KM_PER_CHARGE = 5, K = 12;
+
+  /* ---------- жёстко фиксируем масштаб (Safari игнорирует user-scalable) ---------- */
+  ['gesturestart','gesturechange','gestureend'].forEach(function(t){
+    document.addEventListener(t, function(ev){ ev.preventDefault(); }, {passive:false});
+  });
+  document.addEventListener('dblclick', function(ev){ ev.preventDefault(); }, {passive:false});
+  // добивка: два тапа подряд быстрее 350 мс — глушим второй
+  var lastTap = 0;
+  document.addEventListener('touchend', function(ev){
+    var now = Date.now();
+    if (now - lastTap < 350) ev.preventDefault();
+    lastTap = now;
+  }, {passive:false});
 
   var buf = "12.00";
   var charges = 3;
@@ -208,14 +226,22 @@
       buf = "";
     } else if (k === '⌫'){
       buf = buf.slice(0,-1);
+      if (buf.slice(-1) === '.') buf = buf.slice(0,-1);   // точку проскакиваем
     } else if (k === '.'){
       if (buf.indexOf('.') === -1) buf = (buf === "" ? "0" : buf) + '.';
     } else {
-      var dot = buf.indexOf('.');
-      if (dot >= 0 && buf.length - dot > 2) return;  // максимум 2 знака после точки
-      if (dot < 0 && buf.length >= 2) return;        // целая часть — до 99 км
+      var dot   = buf.indexOf('.');
+      var dig   = buf.replace(/\D/g,'').length;
+      var frac  = dot < 0 ? 0 : buf.length - dot - 1;
+
+      // поле забито (4 цифры или 2 знака после точки) — начинаем ввод заново
+      if (dig >= 4 || frac >= 2) buf = "";
+
       if (buf === "0") buf = "";
       buf += k;
+
+      // две целых цифры — точка сама
+      if (buf.indexOf('.') === -1 && buf.length === 2) buf += '.';
     }
     render();
   }
@@ -231,12 +257,27 @@
     rangeValEl.textContent = buf === "" ? "—" : buf;
     rangeValEl.classList.toggle('blink', buf !== "");
 
+    // не хватает пороха на такую дальность — сами поднимаем заряд
+    var bumped = false;
+    if (d > 0 && elev(d, charges) > MAX_ELEV){
+      var fit = Math.ceil(d / KM_PER_CHARGE);
+      if (fit <= 6 && fit !== charges){ charges = fit; bumped = true; }
+    }
+
     // кнопки зарядов + их углы
     [].forEach.call(chgWrap.children, function(el){
       var n = +el.dataset.n, e = elev(d,n), ok = d > 0 && e <= MAX_ELEV;
       el.className = 'chg' + (n === charges ? ' sel' : '') + (ok ? ' live' : (d > 0 ? ' dead' : ''));
       el.querySelector('.e').textContent = ok ? e.toFixed(2) : '—';
     });
+
+    if (bumped){
+      var sel = chgWrap.children[charges-1];
+      sel.classList.remove('bump');
+      void sel.offsetWidth;               // перезапуск анимации
+      sel.classList.add('bump');
+      buzz();
+    }
 
     var e = elev(d, charges);
     if (d <= 0){
@@ -245,18 +286,16 @@
       noteEl.className = 'note';
       noteEl.textContent = '';
     } else if (e > MAX_ELEV){
-      var need = Math.ceil(d / KM_PER_CHARGE);
       outEl.className = 'big err';
       outEl.textContent = 'НЕ ДОСТАЁТ';
       noteEl.className = 'note warn';
-      noteEl.textContent = need <= 6
-        ? 'нужно зарядов: ' + need + '  ·  предел ' + (charges*KM_PER_CHARGE) + ' км'
-        : 'дальше 30 км не бьёт';
+      noteEl.textContent = 'дальше 30 км не бьёт даже на 6 зарядах';
     } else {
       outEl.className = 'big';
       outEl.innerHTML = e.toFixed(2) + '<span class="deg">°</span>';
       noteEl.className = 'note';
-      noteEl.textContent = 'предел ' + (charges*KM_PER_CHARGE) + ' км  ·  ' +
+      noteEl.textContent = (bumped ? '↑ заряд поднят до ' + charges + '  ·  ' : '') +
+                           'предел ' + (charges*KM_PER_CHARGE) + ' км  ·  ' +
                            (e >= 45 ? 'навесная' : e >= 25 ? 'средняя' : 'настильная');
     }
   }
