@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IRON NEST — расчёт возвышения</title>
+<style>
+  :root{
+    --bg:#1a1714; --panel:#242019; --edge:#3d352a;
+    --brass:#c8a24a; --brass-dim:#8a7132;
+    --ink:#e8dcc0; --dim:#9a8d74;
+    --ok:#7fa650; --bad:#a8442e;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; min-height:100vh; padding:24px 16px 40px;
+    background:
+      radial-gradient(ellipse at 50% 0%, #2e281f 0%, var(--bg) 70%),
+      var(--bg);
+    color:var(--ink);
+    font-family:"Courier New",Courier,monospace;
+  }
+  .wrap{max-width:620px;margin:0 auto}
+  h1{
+    font-size:18px;letter-spacing:.28em;text-transform:uppercase;
+    text-align:center;color:var(--brass);margin:0 0 4px;font-weight:700;
+  }
+  .sub{text-align:center;color:var(--dim);font-size:11px;letter-spacing:.18em;margin-bottom:22px}
+
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--edge);
+    border-radius:3px;
+    box-shadow:inset 0 1px 0 #4a4133, 0 6px 20px rgba(0,0,0,.5);
+    padding:20px;margin-bottom:16px;
+  }
+  label{display:block;font-size:11px;letter-spacing:.16em;color:var(--dim);text-transform:uppercase;margin-bottom:8px}
+
+  input[type=number]{
+    width:100%;padding:12px 14px;font:700 26px "Courier New",monospace;
+    background:#12100c;color:var(--brass);
+    border:1px solid var(--edge);border-radius:2px;outline:none;
+    text-align:center;letter-spacing:.06em;
+  }
+  input[type=number]:focus{border-color:var(--brass-dim);box-shadow:0 0 0 2px rgba(200,162,74,.15)}
+  input[type=number]::-webkit-outer-spin-button,
+  input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+  input[type=number]{-moz-appearance:textfield}
+
+  .slider{width:100%;margin:14px 0 4px;accent-color:var(--brass)}
+
+  .charges{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:6px}
+  .chg{
+    padding:14px 0;text-align:center;cursor:pointer;user-select:none;
+    background:#12100c;border:1px solid var(--edge);border-radius:2px;
+    font-size:20px;font-weight:700;color:var(--dim);transition:.12s;
+  }
+  .chg:hover{border-color:var(--brass-dim)}
+  .chg.sel{background:var(--brass);color:#12100c;border-color:var(--brass)}
+  .chg.dead{opacity:.35;text-decoration:line-through}
+
+  .readout{
+    text-align:center;padding:26px 12px 20px;
+    background:#0d0b08;border:1px solid var(--edge);border-radius:2px;
+  }
+  .big{
+    font-size:76px;font-weight:700;line-height:1;color:var(--brass);
+    text-shadow:0 0 22px rgba(200,162,74,.28);letter-spacing:.02em;
+  }
+  .big.err{color:var(--bad);font-size:44px;text-shadow:none}
+  .deg{font-size:34px;color:var(--brass-dim)}
+  .note{margin-top:12px;font-size:12px;letter-spacing:.1em;color:var(--dim);min-height:16px}
+  .note.warn{color:var(--bad)}
+
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{
+    font-size:10px;letter-spacing:.16em;color:var(--dim);text-transform:uppercase;
+    text-align:right;padding:0 8px 10px;font-weight:400;
+  }
+  th:first-child{text-align:left}
+  td{padding:9px 8px;text-align:right;border-top:1px solid #2f2a21}
+  td:first-child{text-align:left;color:var(--dim)}
+  tr.cur td{background:rgba(200,162,74,.09)}
+  tr.cur td:first-child{color:var(--brass)}
+  .val{color:var(--ink);font-weight:700;font-size:16px}
+  .tag{font-size:10px;letter-spacing:.1em;color:var(--dim)}
+  .no{color:#6b5f4c}
+  .foot{font-size:11px;line-height:1.7;color:var(--dim);letter-spacing:.04em}
+  .foot b{color:var(--brass-dim)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Iron Nest</h1>
+  <div class="sub">Расчёт возвышения орудия</div>
+
+  <div class="panel">
+    <label>Дальность до цели, км</label>
+    <input type="number" id="range" value="12" min="0" max="30" step="0.01">
+    <input type="range" class="slider" id="rangeSlider" value="12" min="0" max="30" step="0.05">
+
+    <label style="margin-top:18px">Пороховых зарядов</label>
+    <div class="charges" id="charges"></div>
+  </div>
+
+  <div class="panel readout">
+    <div class="big" id="out">48.0<span class="deg">°</span></div>
+    <div class="note" id="note"></div>
+  </div>
+
+  <div class="panel">
+    <table>
+      <thead>
+        <tr><th>Заряды</th><th>Макс. дальность</th><th>Возвышение</th><th>Траектория</th></tr>
+      </thead>
+      <tbody id="tbl"></tbody>
+    </table>
+  </div>
+
+  <div class="panel foot">
+    <b>Формула:</b> возвышение = 12 × дальность(км) / заряды. Предел ствола 60°,
+    отсюда макс. дальность = 5 км на заряд.<br>
+    <b>Выбор заряда:</b> минимальный подходящий даёт навесную траекторию (перекинуть через гребень),
+    максимальный — настильную. Заряды и снаряд из ствола не вынимаются — считай до заряжания.
+  </div>
+
+</div>
+
+<script>
+(function(){
+  var MAX_ELEV = 60, KM_PER_CHARGE = 5, K = 12;
+  var charges = 3;
+
+  var rangeEl  = document.getElementById('range');
+  var sliderEl = document.getElementById('rangeSlider');
+  var chgWrap  = document.getElementById('charges');
+  var outEl    = document.getElementById('out');
+  var noteEl   = document.getElementById('note');
+  var tblEl    = document.getElementById('tbl');
+
+  for (var i=1;i<=6;i++){
+    var d = document.createElement('div');
+    d.className = 'chg';
+    d.textContent = i;
+    d.dataset.n = i;
+    d.onclick = function(){ charges = +this.dataset.n; render(); };
+    chgWrap.appendChild(d);
+  }
+
+  function elev(km, c){ return K * km / c; }
+
+  function render(){
+    var km = parseFloat(rangeEl.value);
+    if (isNaN(km) || km < 0) km = 0;
+
+    // кнопки зарядов
+    [].forEach.call(chgWrap.children, function(el){
+      var n = +el.dataset.n;
+      el.classList.toggle('sel', n === charges);
+      el.classList.toggle('dead', elev(km, n) > MAX_ELEV);
+    });
+
+    // главный вывод
+    var e = elev(km, charges);
+    if (km === 0){
+      outEl.className = 'big';
+      outEl.innerHTML = '0.0<span class="deg">°</span>';
+      noteEl.className = 'note';
+      noteEl.textContent = '';
+    } else if (e > MAX_ELEV){
+      outEl.className = 'big err';
+      outEl.textContent = 'НЕ ДОСТАЁТ';
+      noteEl.className = 'note warn';
+      var need = Math.ceil(km / KM_PER_CHARGE);
+      noteEl.textContent = 'нужно ' + need + ' ' + plural(need) + ' — предел ' +
+                           (charges*KM_PER_CHARGE).toFixed(1) + ' км';
+    } else {
+      outEl.className = 'big';
+      outEl.innerHTML = e.toFixed(1) + '<span class="deg">°</span>';
+      noteEl.className = 'note';
+      noteEl.textContent = charges + ' ' + plural(charges) + ' · предел ' +
+                           (charges*KM_PER_CHARGE).toFixed(0) + ' км · ' + arc(e);
+    }
+
+    // таблица
+    tblEl.innerHTML = '';
+    for (var c=1;c<=6;c++){
+      var ev = elev(km, c), ok = ev <= MAX_ELEV && km > 0;
+      var tr = document.createElement('tr');
+      if (c === charges) tr.className = 'cur';
+      tr.innerHTML =
+        '<td>' + c + '</td>' +
+        '<td class="tag">' + (c*KM_PER_CHARGE) + ' км</td>' +
+        '<td class="' + (ok ? 'val' : 'no') + '">' + (ok ? ev.toFixed(1) + '°' : '—') + '</td>' +
+        '<td class="tag">' + (ok ? arc(ev) : '') + '</td>';
+      tblEl.appendChild(tr);
+    }
+  }
+
+  function arc(e){
+    if (e >= 45) return 'навесная';
+    if (e >= 25) return 'средняя';
+    return 'настильная';
+  }
+  function plural(n){
+    if (n % 10 === 1 && n % 100 !== 11) return 'заряд';
+    if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) return 'заряда';
+    return 'зарядов';
+  }
+
+  rangeEl.addEventListener('input', function(){ sliderEl.value = rangeEl.value; render(); });
+  sliderEl.addEventListener('input', function(){ rangeEl.value = sliderEl.value; render(); });
+
+  render();
+})();
+</script>
+</body>
+</html>
